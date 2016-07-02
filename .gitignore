@@ -1,0 +1,21 @@
+# Eclipse files
+*.project
+*.cproject
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+*.lai
+*.slo
+
+# Shared objects
+*.so
+*.so.*
