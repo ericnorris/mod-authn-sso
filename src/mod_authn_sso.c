@@ -1,24 +1,42 @@
-#include "httpd.h"
-#include "http_config.h"
-#include "http_core.h"
-#include "http_log.h"
-#include "http_request.h"
-#include "ap_config.h"
-#include "apr_strings.h"
+#include "mod_authn_sso.h"
 
-#include <sodium.h>
+// Initialization
 
-module authn_sso_module;
+/**
+ *  Declare the module (apache2-style) and configure the various hook and
+ *  configuration loading code.
+ */
+module AP_MODULE_DECLARE_DATA authn_sso_module = {
+    STANDARD20_MODULE_STUFF,
+    create_authn_sso_config,   // create per-dir config structures
+    merge_authn_sso_config,    // merge  per-dir config structures
+    NULL,                      // create per-server config structures
+    NULL,                      // merge  per-server config structures
+    authn_sso_config_commands, // table of config file commands
+    authn_sso_register_hooks   // register hooks
+};
 
-#define MOD_AUTHN_SSO_AUTH_TYPE "mod_authn_sso"
+/**
+ * Register the apache hooks used by this module.
+ *
+ * @param apr_pool_t *pool an apache memory pool
+ */
+void authn_sso_register_hooks(apr_pool_t *pool) {
+    ap_hook_post_config(authn_sso_post_config, NULL, NULL, APR_HOOK_FIRST);
+    ap_hook_check_authn(authn_sso_check_authn, NULL, NULL, APR_HOOK_FIRST,
+                        AP_AUTH_INTERNAL_PER_CONF);
+}
 
-typedef struct {
-    char *context;
-    unsigned char public_key[crypto_sign_PUBLICKEYBYTES];
-    unsigned char *authn_url;
-    unsigned char *cookie_name;
-} authn_sso_config;
+// Configuration
 
+/**
+ * Allocate a brand-new authn_sso_config struct associated with the given pool.
+ *
+ * @param apr_pool_t *pool    an apache memory pool
+ * @param char       *context the directory this config is associated with
+ *
+ * @return authn_sso_config the newly allocated configuration, with defaults
+ */
 void * create_authn_sso_config(apr_pool_t *pool, char *context) {
     authn_sso_config *config = apr_pcalloc(pool, sizeof(authn_sso_config));
 
@@ -27,6 +45,13 @@ void * create_authn_sso_config(apr_pool_t *pool, char *context) {
     return config;
 }
 
+/**
+ * Merge a parent and child directory configuration.
+ *
+ * @param apr_pool_t *pool   an apache memory pool
+ * @param void       *parent the parent directory config
+ * @param void       *child  the child directory config
+ */
 void * merge_authn_sso_config(apr_pool_t *pool, void *parent, void *child) {
 
     authn_sso_config *parent_config = (authn_sso_config *)parent;
@@ -53,8 +78,15 @@ void * merge_authn_sso_config(apr_pool_t *pool, void *parent, void *child) {
     return merged_config;
 }
 
-const char * authn_sso_set_public_key(
-    cmd_parms *cmd, void *config_param, const char *arg) {
+/**
+ * Sets the public key to the hex decoded value specified in the config.
+ *
+ * @param cmd_parms  *cmd
+ * @param void       *config_param the authn_sso_config to modify
+ * @param const char *arg          a hex encoded public key
+ */
+const char * authn_sso_set_public_key(cmd_parms *cmd, void *config_param,
+                                      const char *arg) {
 
     authn_sso_config *config;
     unsigned char *public_key_ptr;
@@ -74,6 +106,17 @@ const char * authn_sso_set_public_key(
     return NULL;
 }
 
+/**
+ * Handle any necessary initialization after the configuration has been
+ * processed.
+ *
+ * @param apr_pool_t *config_pool
+ * @param apr_pool_t *log_pool
+ * @param apr_pool_t *temp_pool
+ * @param server_rec *server
+ *
+ * @return int OK if success, any other value if error
+ */
 int authn_sso_post_config(apr_pool_t *config_pool, apr_pool_t *log_pool,
                           apr_pool_t *temp_pool, server_rec *server) {
 
@@ -84,7 +127,17 @@ int authn_sso_post_config(apr_pool_t *config_pool, apr_pool_t *log_pool,
     return OK;
 }
 
-static int authn_sso_check_authn(request_rec *request) {
+/**
+ * Check if the given request is authenticated.
+ *
+ * This function will return DECLINED if not applicable, OK if authenticated,
+ * and will redirect to the specified SSO URL if necessary.
+ *
+ * @param request_rec *request the request to check
+ *
+ * @return int
+ */
+int authn_sso_check_authn(request_rec *request) {
     const char *current_auth;
 
     current_auth = ap_auth_type(request);
@@ -109,34 +162,6 @@ static int authn_sso_check_authn(request_rec *request) {
     return HTTP_MOVED_TEMPORARILY;
 }
 
-static void authn_sso_register_hooks(apr_pool_t *pool) {
-    ap_hook_post_config(authn_sso_post_config, NULL, NULL, APR_HOOK_FIRST);
-    ap_hook_check_authn(authn_sso_check_authn, NULL, NULL, APR_HOOK_FIRST,
-                        AP_AUTH_INTERNAL_PER_CONF);
-}
 
-static const command_rec authn_sso_config_commands[] = {
-    AP_INIT_TAKE1("AuthnSSOPublicKey", authn_sso_set_public_key,
-        NULL, ACCESS_CONF,
-        "public key used for validating SSO cookie"),
 
-    AP_INIT_TAKE1("AuthnSSOUrl", ap_set_string_slot,
-        (void *)APR_OFFSETOF(authn_sso_config, authn_url), OR_AUTHCFG,
-        "URL to redirect to if authentication fails"),
 
-    AP_INIT_TAKE1("AuthnSSOCookie", ap_set_string_slot,
-        (void *)APR_OFFSETOF(authn_sso_config, cookie_name), OR_AUTHCFG,
-        "name of required SSO cookie"),
-
-    {NULL},
-};
-
-module AP_MODULE_DECLARE_DATA authn_sso_module = {
-    STANDARD20_MODULE_STUFF,
-    create_authn_sso_config,   // create per-dir config structures
-    merge_authn_sso_config,    // merge  per-dir config structures
-    NULL,                      // create per-server config structures
-    NULL,                      // merge  per-server config structures
-    authn_sso_config_commands, // table of config file commands
-    authn_sso_register_hooks   // register hooks
-};
