@@ -53,7 +53,6 @@ void * create_authn_sso_config(apr_pool_t *pool, char *context) {
  * @param void       *child  the child directory config
  */
 void * merge_authn_sso_config(apr_pool_t *pool, void *parent, void *child) {
-
     authn_sso_config *parent_config = (authn_sso_config *)parent;
     authn_sso_config *child_config  = (authn_sso_config *)child;
     authn_sso_config *merged_config = create_authn_sso_config(
@@ -139,6 +138,9 @@ int authn_sso_post_config(apr_pool_t *config_pool, apr_pool_t *log_pool,
  */
 int authn_sso_check_authn(request_rec *request) {
     const char *current_auth;
+    const char *cookie_header_ptr;
+    char *cookie_header;
+    char *sso_cookie;
 
     current_auth = ap_auth_type(request);
 
@@ -147,21 +149,52 @@ int authn_sso_check_authn(request_rec *request) {
     }
 
     authn_sso_config *config = (authn_sso_config *)ap_get_module_config(
-        request->per_dir_config,
-        &authn_sso_module);
+        request->per_dir_config, &authn_sso_module);
 
-    // TODO check for cookie and validate using public key
+    // TODO Check for cookie
+    // TODO Validate cookie signature using libsodium
+    // TODO Explode cookie and set HEADER values
+
+    cookie_header_ptr = apr_table_get(request->headers_in, "Cookie");
+    cookie_header     = apr_pstrdup(request->pool, cookie_header_ptr);
+    sso_cookie        = find_cookie(cookie_header, config->cookie_name);
 
     ap_log_error(
         APLOG_MARK, APLOG_ERR, APR_SUCCESS,
         request->server,
-        "public_key: %s", config->public_key
+        "full cookie: %s, parsed cookie: %s", cookie_header_ptr, sso_cookie
     );
 
     //apr_table_set(request->headers_out, "Location", "https://google.com");
     return HTTP_MOVED_TEMPORARILY;
 }
 
+/**
+ * Return a pointer to to the first occurrence of cookie_name in a
+ * HTTP Cookie: header. NOTE: This modifies the header passed in.
+ *
+ * @param char       *cookie_header string to search
+ * @param const char *cookie_name   name of the cookie to search for
+ *
+ * @return char * pointer to the occurrence, or NULL if none
+ */
+static char * find_cookie(char *cookie_header, const char *cookie_name) {
+    unsigned int name_len = strlen(cookie_name);
+    char *cookie_ptr      = strtok(cookie_header, ";");
 
+    while (cookie_ptr != NULL) {
+        // Trim whitespace
+        while (*cookie_ptr == ' ') {
+            cookie_ptr++;
+        }
 
+        if (strncmp(cookie_ptr, cookie_name, name_len) == 0) {
+            break;
+        }
+
+        cookie_ptr = strtok(NULL, ";");
+    }
+
+    return cookie_ptr;
+}
 

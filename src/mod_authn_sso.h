@@ -78,4 +78,10 @@ int authn_sso_check_authn(request_rec *request);
 
 void authn_sso_register_hooks(apr_pool_t *pool);
 
+/**
+ * Internal functions
+ */
+
+static char * find_cookie(char *cookie_header, const char *cookie_name);
+
 #endif /* MOD_AUTHN_SSO_H_ */
