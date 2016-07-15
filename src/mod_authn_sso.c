@@ -35,7 +35,7 @@ void authn_sso_register_hooks(apr_pool_t *pool) {
  * @param apr_pool_t *pool    an apache memory pool
  * @param char       *context the directory this config is associated with
  *
- * @return authn_sso_config the newly allocated configuration, with defaults
+ * @return authn_sso_config* the newly allocated configuration, with defaults
  */
 void * create_authn_sso_config(apr_pool_t *pool, char *context) {
     authn_sso_config *config = apr_pcalloc(pool, sizeof(authn_sso_config));
@@ -51,6 +51,8 @@ void * create_authn_sso_config(apr_pool_t *pool, char *context) {
  * @param apr_pool_t *pool   an apache memory pool
  * @param void       *parent the parent directory config
  * @param void       *child  the child directory config
+ *
+ * @return authn_sso_config* the merged configuration struct
  */
 void * merge_authn_sso_config(apr_pool_t *pool, void *parent, void *child) {
     authn_sso_config *parent_config = (authn_sso_config *)parent;
@@ -83,6 +85,8 @@ void * merge_authn_sso_config(apr_pool_t *pool, void *parent, void *child) {
  * @param cmd_parms  *cmd
  * @param void       *config_param the authn_sso_config to modify
  * @param const char *arg          a hex encoded public key
+ *
+ * @return const char * the decoded public key, or NULL if missing / invalid
  */
 const char * authn_sso_set_public_key(cmd_parms *cmd, void *config_param,
                                       const char *arg) {
@@ -197,4 +201,3 @@ static char * find_cookie(char *cookie_header, const char *cookie_name) {
 
     return cookie_ptr;
 }
-
