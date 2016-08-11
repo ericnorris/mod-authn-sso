@@ -15,6 +15,7 @@
 #include "ap_config.h"
 #include "apr_strings.h"
 
+#include <stdbool.h>
 #include <sodium.h>
 
 /**
@@ -82,6 +83,8 @@ void authn_sso_register_hooks(apr_pool_t *pool);
  * Internal functions
  */
 
-static char * find_cookie(char *cookie_header, const char *cookie_name);
+static int find_cookie(const char *cookie_header, const char *cookie_name,
+                       const char **ret_cookie_ptr,
+                       unsigned int *ret_cookie_len);
 
 #endif /* MOD_AUTHN_SSO_H_ */

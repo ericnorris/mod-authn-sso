@@ -142,9 +142,10 @@ int authn_sso_post_config(apr_pool_t *config_pool, apr_pool_t *log_pool,
  */
 int authn_sso_check_authn(request_rec *request) {
     const char *current_auth;
-    const char *cookie_header_ptr;
-    char *cookie_header;
-    char *sso_cookie;
+    const char *cookie_header;
+    const char *sso_cookie;
+    unsigned int sso_cookie_len;
+    bool found_cookie;
 
     current_auth = ap_auth_type(request);
 
@@ -159,14 +160,16 @@ int authn_sso_check_authn(request_rec *request) {
     // TODO Validate cookie signature using libsodium
     // TODO Explode cookie and set HEADER values
 
-    cookie_header_ptr = apr_table_get(request->headers_in, "Cookie");
-    cookie_header     = apr_pstrdup(request->pool, cookie_header_ptr);
-    sso_cookie        = find_cookie(cookie_header, config->cookie_name);
+    cookie_header = apr_table_get(request->headers_in, "Cookie");
+    found_cookie  = find_cookie(cookie_header, config->cookie_name,
+        &sso_cookie, &sso_cookie_len);
+
+    if (found_cookie) {}
 
     ap_log_error(
         APLOG_MARK, APLOG_ERR, APR_SUCCESS,
         request->server,
-        "full cookie: %s, parsed cookie: %s", cookie_header_ptr, sso_cookie
+        "full cookie: %s, parsed cookie: %.*s", cookie_header, sso_cookie_len, sso_cookie
     );
 
     //apr_table_set(request->headers_out, "Location", "https://google.com");
@@ -174,30 +177,63 @@ int authn_sso_check_authn(request_rec *request) {
 }
 
 /**
- * Return a pointer to to the first occurrence of cookie_name in a
- * HTTP Cookie: header. NOTE: This modifies the header passed in.
+ * Sets the ret_cookie_ptr to the value of the first occurrence of cookie_name
+ * in a HTTP Cookie: header.
  *
- * @param char       *cookie_header string to search
- * @param const char *cookie_name   name of the cookie to search for
+ * @param const char *cookie_header    string to search
+ * @param const char *cookie_name      name of the cookie to search for
+ * @param char **ret_cookie_ptr return pointer of cookie value
+ * @param unsigned int *ret_cookie_len return pointer of cookie length
  *
- * @return char * pointer to the occurrence, or NULL if none
+ * @return bool non-zero if found
  */
-static char * find_cookie(char *cookie_header, const char *cookie_name) {
-    unsigned int name_len = strlen(cookie_name);
-    char *cookie_ptr      = strtok(cookie_header, ";");
+int find_cookie(
+    const char *cookie_header,
+    const char *cookie_name,
+    const char **ret_cookie_ptr,
+    unsigned int *ret_cookie_len
+) {
+
+    unsigned int name_len  = strlen(cookie_name);
+    const char *cookie_ptr = cookie_header;
+    const char *semicolon_ptr;
+
+    if (ret_cookie_ptr == NULL || ret_cookie_len == NULL) {
+        return false;
+    }
+
+    *ret_cookie_ptr = NULL;
+    *ret_cookie_len = 0;
 
     while (cookie_ptr != NULL) {
-        // Trim whitespace
-        while (*cookie_ptr == ' ') {
+        // Trim whitespace, skip semicolons
+        while (*cookie_ptr == ' ' || *cookie_ptr == ';') {
             cookie_ptr++;
         }
 
+        // Find a delimiting ';' or end-of-string
+        semicolon_ptr =  strchr(cookie_ptr, ';');
+
         if (strncmp(cookie_ptr, cookie_name, name_len) == 0) {
-            break;
+            // Found it!
+            cookie_ptr += name_len;
+
+            // Continue until we get to the cookie value
+            while (*cookie_ptr == ' ' || *cookie_ptr == '=') {
+                cookie_ptr++;
+            }
+
+
+
+            *ret_cookie_ptr = cookie_ptr;
+            *ret_cookie_len = semicolon_ptr ? (semicolon_ptr - cookie_ptr)
+                                            : strlen(cookie_ptr);
+
+            return true;
         }
 
-        cookie_ptr = strtok(NULL, ";");
+        cookie_ptr = semicolon_ptr;
     }
 
-    return cookie_ptr;
+    return false;
 }
