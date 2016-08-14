@@ -83,8 +83,14 @@ void authn_sso_register_hooks(apr_pool_t *pool);
  * Internal functions
  */
 
-static int find_cookie(const char *cookie_header, const char *cookie_name,
-                       const char **ret_cookie_ptr,
-                       unsigned int *ret_cookie_len);
+static bool check_auth_handler(request_rec *request);
+
+static bool find_cookie(const char *cookie_header, const char *cookie_name,
+                        const char **ret_cookie_ptr,
+                        unsigned int *ret_cookie_len);
+
+static bool validate_signature(const char *cookie, unsigned int cookie_len);
+
+static int redirect(request_rec *request, const char *redirect_url);
 
 #endif /* MOD_AUTHN_SSO_H_ */

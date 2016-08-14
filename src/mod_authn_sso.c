@@ -130,6 +130,8 @@ int authn_sso_post_config(apr_pool_t *config_pool, apr_pool_t *log_pool,
     return OK;
 }
 
+// Main entry point
+
 /**
  * Check if the given request is authenticated.
  *
@@ -141,39 +143,62 @@ int authn_sso_post_config(apr_pool_t *config_pool, apr_pool_t *log_pool,
  * @return int
  */
 int authn_sso_check_authn(request_rec *request) {
-    const char *current_auth;
-    const char *cookie_header;
-    const char *sso_cookie;
-    unsigned int sso_cookie_len;
-    bool found_cookie;
+    authn_sso_config *config;
+    const char *redirect_url;
+    const char *cookie_name;
+    const char *header_str;
+    const char *cookie_ptr;
+    unsigned int cookie_len;
 
-    current_auth = ap_auth_type(request);
-
-    if (!current_auth || strcasecmp(current_auth, MOD_AUTHN_SSO_AUTH_TYPE)) {
+    if (!check_auth_handler(request)) {
         return DECLINED;
     }
 
-    authn_sso_config *config = (authn_sso_config *)ap_get_module_config(
-        request->per_dir_config, &authn_sso_module);
-
-    // TODO Check for cookie
-    // TODO Validate cookie signature using libsodium
-    // TODO Explode cookie and set HEADER values
-
-    cookie_header = apr_table_get(request->headers_in, "Cookie");
-    found_cookie  = find_cookie(cookie_header, config->cookie_name,
-        &sso_cookie, &sso_cookie_len);
-
-    if (found_cookie) {}
-
-    ap_log_error(
-        APLOG_MARK, APLOG_ERR, APR_SUCCESS,
-        request->server,
-        "full cookie: %s, parsed cookie: %.*s", cookie_header, sso_cookie_len, sso_cookie
+    // Grab the configuration
+    config = (authn_sso_config *)ap_get_module_config(
+        request->per_dir_config,
+        &authn_sso_module
     );
 
-    //apr_table_set(request->headers_out, "Location", "https://google.com");
-    return HTTP_MOVED_TEMPORARILY;
+    // Pull out the necessary config options and Cookie: header
+    redirect_url = config->authn_url;
+    cookie_name  = config->cookie_name;
+    header_str   = apr_table_get(request->headers_in, "Cookie");
+
+    // Attempt to find the desired SSO cookie
+    if (!find_cookie(header_str, cookie_name, &cookie_ptr, &cookie_len)) {
+        return redirect(request, redirect_url);
+    }
+
+    // Validate the public key signature attached to the cookie
+    if (!validate_signature(cookie_ptr, cookie_len)) {
+        return redirect(request, redirect_url);
+    }
+
+    // TODO explode the cookie into separate headers
+    // TODO set the USER variable or whatever
+
+    return OK;
+}
+
+// Helper functions
+
+/**
+ * Return whether or not this module is responsible for authenticating the
+ * request.
+ *
+ * @param request_rec *request The current request
+ *
+ * @return bool true (non-zero) if it should handle the request
+ */
+static bool check_auth_handler(request_rec *request) {
+    const char *current_auth = ap_auth_type(request);
+
+    if (current_auth && !strcasecmp(current_auth, MOD_AUTHN_SSO_AUTH_TYPE)) {
+        return true;
+    }
+
+    return false;
 }
 
 /**
@@ -185,9 +210,9 @@ int authn_sso_check_authn(request_rec *request) {
  * @param char **ret_cookie_ptr return pointer of cookie value
  * @param unsigned int *ret_cookie_len return pointer of cookie length
  *
- * @return bool non-zero if found
+ * @return bool true (non-zero) if found
  */
-int find_cookie(
+static bool find_cookie(
     const char *cookie_header,
     const char *cookie_name,
     const char **ret_cookie_ptr,
@@ -223,8 +248,6 @@ int find_cookie(
                 cookie_ptr++;
             }
 
-
-
             *ret_cookie_ptr = cookie_ptr;
             *ret_cookie_len = semicolon_ptr ? (semicolon_ptr - cookie_ptr)
                                             : strlen(cookie_ptr);
@@ -236,4 +259,30 @@ int find_cookie(
     }
 
     return false;
+}
+
+static bool validate_signature(const char *cookie, unsigned int cookie_len) {
+    // TODO
+    return false;
+}
+
+/**
+ * Redirect the request by writing out a Location: header if the redirect_url
+ * is non-null, and returning the proper HTTP status code.
+ *
+ * @param request_rec *request     the current request
+ * @param const char *redirect_url the (optional) URL to redirect to
+ *
+ * @return int HTTP_MOVED_TEMPORARILY, the redirect response code
+ */
+static int redirect(request_rec *request, const char *redirect_url) {
+    if (redirect_url) {
+        apr_table_set(request->headers_out, "Location", "https://google.com");
+    }
+
+    ap_log_rerror(APLOG_MARK, APLOG_INFO, APR_SUCCESS, request,
+                  "Redirecting %s to %s",
+                  request->uri, redirect_url);
+
+    return HTTP_MOVED_TEMPORARILY;
 }
